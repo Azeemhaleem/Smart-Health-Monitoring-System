@@ -7,10 +7,7 @@
 #include "MAX30105.h"
 #include "heartRate.h"
 
-// ============================================================
 // HARDWARE PINS
-// ============================================================
-
 static const int PIN_SDA = 21;
 static const int PIN_SCL = 22;
 static const int PIN_DHT = 4;
@@ -18,48 +15,29 @@ static const int PIN_BUZZER = 25;
 static const int PIN_LED = 26;
 static const int PIN_SOS = 27;
 
-// ============================================================
 // ALERT THRESHOLDS
-// ============================================================
-
 static const float HR_ALERT_LOW_BPM = 50.0f;
 static const float HR_ALERT_HIGH_BPM = 120.0f;
 
-// NOTE:
-// DHT11 measures ambient temperature, not body temperature.
-// This threshold is therefore only for the current prototype.
 static const float TEMP_ALERT_HIGH_C = 32.0f;
 
-// ============================================================
 // MAX30102 CONFIGURATION
-// ============================================================
-
-// Ambient IR is usually near 0–2000.
-// A covered sensor should jump well above this.
 static const long FINGER_IR_THRESHOLD = 5000;
 
 static const int FINGER_OFF_SAMPLES = 40;
 static const int FINGER_ON_SAMPLES = 8;
 
-// Sensor configuration:
-// 400 samples/sec with average of 4
-// Effective output = 100 samples/sec
+// Sensor configuration
 static const int SAMPLE_RATE_HZ = 400;
 static const int SAMPLE_AVERAGE = 4;
 static const int EFFECTIVE_SPS = SAMPLE_RATE_HZ / SAMPLE_AVERAGE;
 static const float SAMPLE_PERIOD_MS =
     1000.0f / EFFECTIVE_SPS;
 
-// ============================================================
 // HEART RATE CONFIGURATION
-// ============================================================
-
 static const byte BPM_WINDOW = 4;
 
-// ============================================================
 // TIMING
-// ============================================================
-
 static const unsigned long DHT_INTERVAL_MS = 3000;
 static const unsigned long OLED_INTERVAL_MS = 200;
 static const unsigned long SERIAL_INTERVAL_MS = 500;
@@ -73,34 +51,16 @@ static const unsigned long MQTT_RECONNECT_INTERVAL_MS = 5000;
 // SOS button debounce.
 static const unsigned long SOS_DEBOUNCE_MS = 40;
 
-// ============================================================
 // WIFI CONFIGURATION
-// ============================================================
-
-// CHANGE THESE TWO VALUES
 const char* WIFI_SSID = "AZM";
 const char* WIFI_PASSWORD = "72162830";
 
-// ============================================================
 // MQTT / FIWARE CONFIGURATION
-// ============================================================
-
-// IMPORTANT:
-// Use the IP address of the computer/Raspberry Pi/server
-// running your FIWARE Docker containers.
-//
-// DO NOT use "localhost" here.
-//
-// Example:
-// const char* MQTT_SERVER = "192.168.1.100";
-//
-// Find your computer's LAN IP using:
-// hostname -I
-//
 const char* MQTT_SERVER = "192.168.8.187";
 
 // Mosquitto port exposed by Docker.
 static const uint16_t MQTT_PORT = 1883;
+
 // FIWARE IoT Agent MQTT topic.
 // This matches your existing FIWARE device registration.
 const char* MQTT_TOPIC = "/smartwatch/smartwatch001/attrs";
@@ -109,10 +69,7 @@ const char* MQTT_TOPIC = "/smartwatch/smartwatch001/attrs";
 const char* MQTT_CLIENT_ID =
     "smartwatch001";
 
-// ============================================================
 // OBJECTS
-// ============================================================
-
 U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
     U8G2_R0,
     U8X8_PIN_NONE
@@ -125,10 +82,7 @@ DHT dht(PIN_DHT, DHT11);
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
-// ============================================================
 // HEART RATE VARIABLES
-// ============================================================
-
 float bpmWindow[BPM_WINDOW];
 
 byte bpmIndex = 0;
@@ -151,37 +105,25 @@ float instantBpm = 0;
 float averageBpm = 0;
 float displayBpm = 0;
 
-// ============================================================
 // DHT VARIABLES
-// ============================================================
-
 float temperatureC = NAN;
 float humidityPct = NAN;
 
 bool dhtOk = false;
 
-// ============================================================
 // SOS VARIABLES
-// ============================================================
-
 bool sosLatched = false;
 
 bool lastSosRaw = true;
 
 unsigned long lastSosChangeMs = 0;
 
-// ============================================================
 // ALERT VARIABLES
-// ============================================================
-
 bool hrAlert = false;
 bool tempAlert = false;
 bool alertActive = false;
 
-// ============================================================
 // TIMERS
-// ============================================================
-
 unsigned long lastDhtMs = 0;
 unsigned long lastOledMs = 0;
 unsigned long lastSerialMs = 0;
@@ -189,10 +131,7 @@ unsigned long lastSerialMs = 0;
 unsigned long lastMqttPublishMs = 0;
 unsigned long lastMqttReconnectMs = 0;
 
-// ============================================================
 // FUNCTION DECLARATIONS
-// ============================================================
-
 void initializeMax30102();
 
 void resetHeartRate();
@@ -229,20 +168,14 @@ void mqttCallback(
     unsigned int length
 );
 
-// ============================================================
 // SETUP
-// ============================================================
-
 void setup()
 {
     Serial.begin(115200);
 
     delay(500);
-
-    // --------------------------------------------------------
+    
     // GPIO INITIALIZATION
-    // --------------------------------------------------------
-
     pinMode(PIN_LED, OUTPUT);
 
     pinMode(PIN_BUZZER, OUTPUT);
@@ -253,18 +186,12 @@ void setup()
 
     digitalWrite(PIN_BUZZER, LOW);
 
-    // --------------------------------------------------------
     // I2C INITIALIZATION
-    // --------------------------------------------------------
-
     Wire.begin(PIN_SDA, PIN_SCL);
 
     Wire.setClock(400000);
 
-    // --------------------------------------------------------
     // OLED INITIALIZATION
-    // --------------------------------------------------------
-
     display.begin();
 
     display.setFont(u8g2_font_6x10_tf);
@@ -285,24 +212,15 @@ void setup()
 
     display.sendBuffer();
 
-    // --------------------------------------------------------
     // DHT INITIALIZATION
-    // --------------------------------------------------------
-
     dht.begin();
 
-    // --------------------------------------------------------
     // MAX30102 INITIALIZATION
-    // --------------------------------------------------------
-
     initializeMax30102();
 
     resetHeartRate();
 
-    // --------------------------------------------------------
     // WIFI
-    // --------------------------------------------------------
-
     Serial.println();
     Serial.println(
         "========================================"
@@ -318,10 +236,7 @@ void setup()
 
     connectWiFi();
 
-    // --------------------------------------------------------
     // MQTT
-    // --------------------------------------------------------
-
     mqttClient.setServer(
         MQTT_SERVER,
         MQTT_PORT
@@ -344,54 +259,29 @@ void setup()
     );
 }
 
-// ============================================================
 // MAIN LOOP
-// ============================================================
-
 void loop()
 {
-    // --------------------------------------------------------
     // HEART RATE
-    // --------------------------------------------------------
-
-    // Heart-rate samples must be drained continuously.
     sampleHeartRate();
 
-    // --------------------------------------------------------
     // SOS BUTTON
-    // --------------------------------------------------------
-
     readSosButton();
 
-    // --------------------------------------------------------
     // ALERT LOGIC
-    // --------------------------------------------------------
-
     evaluateAlerts();
 
     driveAlertOutputs();
-
-    // --------------------------------------------------------
-    // IMPORTANT:
-    // Do not run slower I2C operations while MAX30102 FIFO
-    // still has unread samples.
-    // --------------------------------------------------------
 
     if (particleSensor.available())
     {
         return;
     }
 
-    // --------------------------------------------------------
     // CURRENT TIME
-    // --------------------------------------------------------
-
     const unsigned long now = millis();
 
-    // --------------------------------------------------------
     // DHT11
-    // --------------------------------------------------------
-
     if (
         now - lastDhtMs >= DHT_INTERVAL_MS ||
         lastDhtMs == 0
@@ -399,17 +289,11 @@ void loop()
     {
         readDht();
     }
-
-    // --------------------------------------------------------
+    
     // WIFI / MQTT
-    // --------------------------------------------------------
-
     maintainMQTT();
 
-    // --------------------------------------------------------
     // MQTT PUBLISH
-    // --------------------------------------------------------
-
     if (
         mqttClient.connected() &&
         (
@@ -423,10 +307,7 @@ void loop()
         publishHealthData();
     }
 
-    // --------------------------------------------------------
     // OLED
-    // --------------------------------------------------------
-
     if (
         now - lastOledMs >= OLED_INTERVAL_MS
     )
@@ -436,10 +317,7 @@ void loop()
         updateOled();
     }
 
-    // --------------------------------------------------------
     // SERIAL
-    // --------------------------------------------------------
-
     if (
         now - lastSerialMs >= SERIAL_INTERVAL_MS
     )
@@ -450,10 +328,7 @@ void loop()
     }
 }
 
-// ============================================================
 // MAX30102 INITIALIZATION
-// ============================================================
-
 void initializeMax30102()
 {
     if (
@@ -495,10 +370,7 @@ void initializeMax30102()
         }
     }
 
-    // --------------------------------------------------------
     // MAX30102 CONFIGURATION
-    // --------------------------------------------------------
-
     particleSensor.setup(
         0x3F,
         SAMPLE_AVERAGE,
@@ -527,10 +399,7 @@ void initializeMax30102()
     );
 }
 
-// ============================================================
 // RESET HEART RATE
-// ============================================================
-
 void resetHeartRate()
 {
     instantBpm = 0;
@@ -557,10 +426,7 @@ void resetHeartRate()
     }
 }
 
-// ============================================================
 // CALCULATE AVERAGE BPM
-// ============================================================
-
 void calculateAverageBpm()
 {
     if (validBpmCount == 0)
@@ -585,20 +451,14 @@ void calculateAverageBpm()
         total / validBpmCount;
 }
 
-// ============================================================
 // PROCESS MAX30102 IR SAMPLE
-// ============================================================
-
 void processIrSample(
     long irValue
 )
 {
     sampleCount++;
 
-    // --------------------------------------------------------
     // FINGER REMOVED
-    // --------------------------------------------------------
-
     if (
         irValue < FINGER_IR_THRESHOLD
     )
@@ -627,10 +487,7 @@ void processIrSample(
         return;
     }
 
-    // --------------------------------------------------------
     // FINGER DETECTED
-    // --------------------------------------------------------
-
     fingerOffCount = 0;
 
     if (
@@ -654,10 +511,7 @@ void processIrSample(
         return;
     }
 
-    // --------------------------------------------------------
     // BEAT DETECTION
-    // --------------------------------------------------------
-
     if (
         !checkForBeat(irValue)
     )
@@ -665,10 +519,7 @@ void processIrSample(
         return;
     }
 
-    // --------------------------------------------------------
     // FIRST BEAT
-    // --------------------------------------------------------
-
     if (lastBeatSample == 0)
     {
         lastBeatSample =
@@ -677,10 +528,7 @@ void processIrSample(
         return;
     }
 
-    // --------------------------------------------------------
     // TIME BETWEEN BEATS
-    // --------------------------------------------------------
-
     const uint32_t deltaSamples =
         sampleCount -
         lastBeatSample;
@@ -701,10 +549,7 @@ void processIrSample(
         60000.0f /
         deltaMs;
 
-    // --------------------------------------------------------
     // REJECT INVALID BPM
-    // --------------------------------------------------------
-
     if (
         instantBpm < 40.0f ||
         instantBpm > 180.0f
@@ -713,10 +558,7 @@ void processIrSample(
         return;
     }
 
-    // --------------------------------------------------------
     // STORE BPM
-    // --------------------------------------------------------
-
     bpmWindow[bpmIndex] =
         instantBpm;
 
@@ -734,10 +576,7 @@ void processIrSample(
 
     calculateAverageBpm();
 
-    // --------------------------------------------------------
     // SMOOTH DISPLAY BPM
-    // --------------------------------------------------------
-
     if (
         displayBpm < 1.0f
     )
@@ -752,20 +591,14 @@ void processIrSample(
             (0.55f * displayBpm);
     }
 
-    // --------------------------------------------------------
     // OLED BEAT INDICATOR
-    // --------------------------------------------------------
-
     beatFlash = true;
 
     beatFlashUntilMs =
         millis() + 120;
 }
 
-// ============================================================
 // SAMPLE HEART RATE
-// ============================================================
-
 void sampleHeartRate()
 {
     particleSensor.check();
@@ -791,10 +624,7 @@ void sampleHeartRate()
     }
 }
 
-// ============================================================
 // READ DHT11
-// ============================================================
-
 void readDht()
 {
     lastDhtMs = millis();
@@ -822,10 +652,7 @@ void readDht()
     temperatureC = t;
 }
 
-// ============================================================
 // SOS BUTTON
-// ============================================================
-
 void readSosButton()
 {
     const bool raw =
@@ -889,10 +716,7 @@ void readSosButton()
     }
 }
 
-// ============================================================
 // ALERT EVALUATION
-// ============================================================
-
 void evaluateAlerts()
 {
     hrAlert = false;
@@ -912,8 +736,6 @@ void evaluateAlerts()
             );
     }
 
-    // NOTE:
-    // This is ambient temperature with DHT11.
     tempAlert =
         dhtOk &&
         !isnan(temperatureC) &&
@@ -928,10 +750,7 @@ void evaluateAlerts()
         tempAlert;
 }
 
-// ============================================================
 // ALERT OUTPUTS
-// ============================================================
-
 void driveAlertOutputs()
 {
     if (!alertActive)
@@ -967,10 +786,7 @@ void driveAlertOutputs()
     );
 }
 
-// ============================================================
 // WIFI CONNECTION
-// ============================================================
-
 void connectWiFi()
 {
     if (
@@ -1066,10 +882,7 @@ void connectWiFi()
     }
 }
 
-// ============================================================
 // MQTT CONNECTION
-// ============================================================
-
 bool connectMQTT()
 {
     if (
@@ -1138,16 +951,10 @@ bool connectMQTT()
     return false;
 }
 
-// ============================================================
 // MAINTAIN WIFI + MQTT
-// ============================================================
-
 void maintainMQTT()
 {
-    // --------------------------------------------------------
     // WIFI LOST
-    // --------------------------------------------------------
-
     if (
         WiFi.status() !=
         WL_CONNECTED
@@ -1175,10 +982,7 @@ void maintainMQTT()
         return;
     }
 
-    // --------------------------------------------------------
     // MQTT LOST
-    // --------------------------------------------------------
-
     if (
         !mqttClient.connected()
     )
@@ -1198,17 +1002,11 @@ void maintainMQTT()
         return;
     }
 
-    // --------------------------------------------------------
     // PROCESS MQTT
-    // --------------------------------------------------------
-
     mqttClient.loop();
 }
 
-// ============================================================
 // PUBLISH HEALTH DATA
-// ============================================================
-
 void publishHealthData()
 {
     if (
@@ -1217,12 +1015,6 @@ void publishHealthData()
     {
         return;
     }
-
-    // --------------------------------------------------------
-    // Build JSON payload manually.
-    // No ArduinoJson dependency required.
-    // --------------------------------------------------------
-
     char payload[512];
 
     int heartRateToSend = 0;
@@ -1312,10 +1104,7 @@ void publishHealthData()
     }
 }
 
-// ============================================================
 // MQTT CALLBACK
-// ============================================================
-
 void mqttCallback(
     char* topic,
     byte* payload,
@@ -1344,10 +1133,7 @@ void mqttCallback(
     Serial.println();
 }
 
-// ============================================================
 // OLED DISPLAY
-// ============================================================
-
 void updateOled()
 {
     char line[32];
@@ -1357,10 +1143,6 @@ void updateOled()
     display.setFont(
         u8g2_font_6x10_tf
     );
-
-    // --------------------------------------------------------
-    // TITLE
-    // --------------------------------------------------------
 
     if (
         beatFlash
@@ -1381,10 +1163,7 @@ void updateOled()
         );
     }
 
-    // --------------------------------------------------------
     // BPM
-    // --------------------------------------------------------
-
     display.setFont(
         u8g2_font_ncenB18_tr
     );
@@ -1431,10 +1210,7 @@ void updateOled()
         );
     }
 
-    // --------------------------------------------------------
     // TEMPERATURE + HUMIDITY
-    // --------------------------------------------------------
-
     display.setFont(
         u8g2_font_6x10_tf
     );
@@ -1464,10 +1240,7 @@ void updateOled()
         line
     );
 
-    // --------------------------------------------------------
     // STATUS
-    // --------------------------------------------------------
-
     if (sosLatched)
     {
         display.drawStr(
@@ -1538,10 +1311,7 @@ void updateOled()
     display.sendBuffer();
 }
 
-// ============================================================
 // SERIAL STATUS
-// ============================================================
-
 void printStatus()
 {
     Serial.print("IR=");
