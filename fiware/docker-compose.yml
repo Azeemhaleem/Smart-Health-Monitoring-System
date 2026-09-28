@@ -1,0 +1,127 @@
+services:
+
+  # =========================
+  # MongoDB
+  # =========================
+  mongo-db:
+    image: mongo:6.0
+    container_name: smart-watch-mongo
+    restart: unless-stopped
+    command: --bind_ip_all
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - fiware
+
+
+  # =========================
+  # FIWARE Orion Context Broker
+  # =========================
+  orion:
+    image: quay.io/fiware/orion:latest
+    container_name: smart-watch-orion
+    restart: unless-stopped
+    depends_on:
+      - mongo-db
+    command: -dbURI mongodb://mongo-db:27017/orion
+    ports:
+      - "1026:1026"
+    networks:
+      - fiware
+
+
+  # =========================
+  # Mosquitto MQTT Broker
+  # =========================
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: smart-watch-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    networks:
+      - fiware
+
+
+  # =========================
+  # FIWARE IoT Agent JSON
+  # =========================
+  iot-agent:
+    image: quay.io/fiware/iotagent-json:latest
+    hostname: iot-agent
+    container_name: smart-watch-iot-agent
+    restart: unless-stopped
+
+    depends_on:
+      - mongo-db
+      - orion
+      - mosquitto
+
+    ports:
+      - "4041:4041"
+      - "7896:7896"
+
+    environment:
+
+      # Orion Context Broker
+      - IOTA_CB_HOST=orion
+      - IOTA_CB_PORT=1026
+
+      # IoT Agent northbound/provisioning API
+      - IOTA_NORTH_PORT=4041
+
+      # MongoDB device registry
+      - IOTA_REGISTRY_TYPE=mongodb
+      - IOTA_MONGO_URI=mongodb://mongo-db:27017/iotagentjson
+
+      # Logging
+      - IOTA_LOG_LEVEL=DEBUG
+
+      # Add timestamps to received measurements
+      - IOTA_TIMESTAMP=true
+
+      # Automatically convert numeric JSON values
+      - IOTA_AUTOCAST=true
+
+      # MQTT broker
+      - IOTA_MQTT_HOST=mosquitto
+      - IOTA_MQTT_PORT=1883
+      - IOTA_MQTT_PROTOCOL=mqtt
+      - IOTA_MQTT_QOS=0
+      - IOTA_MQTT_RETAIN=false
+
+      # IoT Agent HTTP port
+      - IOTA_HTTP_PORT=7896
+
+      # Provider URL used by IoT Agent
+      - IOTA_PROVIDER_URL=http://iot-agent:4041
+
+      # Default tenant
+      - IOTA_FALLBACK_TENANT=openiot
+
+      # Multi-core mode
+      - IOTA_MULTI_CORE=true
+
+    networks:
+      - fiware
+
+
+# =========================
+# Persistent Volumes
+# =========================
+volumes:
+  mongo-data:
+  mosquitto-data:
+  mosquitto-log:
+
+
+# =========================
+# Network
+# =========================
+networks:
+  fiware:
+    driver: bridge
