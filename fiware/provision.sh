@@ -36,10 +36,12 @@ curl -sS -o /dev/null -w "device HTTP %{http_code}\n" -X POST "${IOTA_URL}/iot/d
       "attributes": [
         {"object_id": "heartRate", "name": "heartRate", "type": "Number"},
         {"object_id": "temperature", "name": "temperature", "type": "Number"},
+        {"object_id": "ambientTemperature", "name": "ambientTemperature", "type": "Number"},
         {"object_id": "humidity", "name": "humidity", "type": "Number"},
         {"object_id": "sos", "name": "sos", "type": "Boolean"},
         {"object_id": "heartRateAlert", "name": "heartRateAlert", "type": "Boolean"},
         {"object_id": "temperatureAlert", "name": "temperatureAlert", "type": "Boolean"},
+        {"object_id": "bodyTemperatureDemo", "name": "bodyTemperatureDemo", "type": "Boolean"},
         {"object_id": "fingerPresent", "name": "fingerPresent", "type": "Boolean"}
       ]
     }]
@@ -52,10 +54,12 @@ curl -sS -o /dev/null -w "update HTTP %{http_code}\n" -X PUT "${IOTA_URL}/iot/de
     "attributes": [
       {"object_id": "heartRate", "name": "heartRate", "type": "Number"},
       {"object_id": "temperature", "name": "temperature", "type": "Number"},
+      {"object_id": "ambientTemperature", "name": "ambientTemperature", "type": "Number"},
       {"object_id": "humidity", "name": "humidity", "type": "Number"},
       {"object_id": "sos", "name": "sos", "type": "Boolean"},
       {"object_id": "heartRateAlert", "name": "heartRateAlert", "type": "Boolean"},
       {"object_id": "temperatureAlert", "name": "temperatureAlert", "type": "Boolean"},
+      {"object_id": "bodyTemperatureDemo", "name": "bodyTemperatureDemo", "type": "Boolean"},
       {"object_id": "fingerPresent", "name": "fingerPresent", "type": "Boolean"}
     ]
   }'

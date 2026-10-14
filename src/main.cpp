@@ -6,6 +6,7 @@
 #include <DHT.h>
 #include "MAX30105.h"
 #include "heartRate.h"
+#include <Adafruit_MLX90614.h>
 
 // HARDWARE PINS
 static const int PIN_SDA = 21;
@@ -18,6 +19,8 @@ static const int PIN_SOS = 27;
 // ALERT THRESHOLDS
 static const float HR_ALERT_LOW_BPM = 50.0f;
 static const float HR_ALERT_HIGH_BPM = 120.0f;
+static const float HR_VALID_MIN_BPM = 25.0f;
+static const float HR_VALID_MAX_BPM = 180.0f;
 
 static const float TEMP_ALERT_HIGH_C = 32.0f;
 
@@ -78,6 +81,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
 MAX30105 particleSensor;
 
 DHT dht(PIN_DHT, DHT11);
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -105,11 +109,18 @@ float instantBpm = 0;
 float averageBpm = 0;
 float displayBpm = 0;
 
-// DHT VARIABLES
-float temperatureC = NAN;
+// TEMPERATURE SENSOR READINGS
+// Temporary presentation mode while the MLX90614 is unavailable.
+static const bool DEMO_BODY_TEMPERATURE = true;
+float bodyTemperatureC = NAN;
+float ambientTemperatureC = NAN;
 float humidityPct = NAN;
 
 bool dhtOk = false;
+bool mlxOk = false;
+bool bodyTemperatureAvailable = false;
+unsigned long bodyDemoStartMs = 0;
+bool bodyDemoStarted = false;
 
 // SOS VARIABLES
 bool sosLatched = false;
@@ -142,7 +153,7 @@ void processIrSample(long irValue);
 
 void sampleHeartRate();
 
-void readDht();
+void readTemperatures();
 
 void readSosButton();
 
@@ -189,10 +200,13 @@ void setup()
     // I2C INITIALIZATION
     Wire.begin(PIN_SDA, PIN_SCL);
 
-    Wire.setClock(400000);
+    // MLX90614 uses SMBus timing (up to 100 kHz); keep the shared
+    // OLED/MAX30102/MLX90614 bus at a compatible clock speed.
+    Wire.setClock(100000);
 
     // OLED INITIALIZATION
     display.begin();
+    display.setBusClock(100000);
 
     display.setFont(u8g2_font_6x10_tf);
 
@@ -214,6 +228,12 @@ void setup()
 
     // DHT INITIALIZATION
     dht.begin();
+
+    // MLX90614 body-temperature sensor (default I2C address 0x5A).
+    mlxOk = mlx.begin(0x5A, &Wire);
+    Serial.println(mlxOk ? "MLX90614 ready" : "MLX90614 not found; continuing without it");
+    if (DEMO_BODY_TEMPERATURE)
+        Serial.println("BODY TEMPERATURE DEMO enabled: 36.1, then 36.4 and 36.5 C");
 
     // MAX30102 INITIALIZATION
     initializeMax30102();
@@ -273,21 +293,16 @@ void loop()
 
     driveAlertOutputs();
 
-    if (particleSensor.available())
-    {
-        return;
-    }
-
     // CURRENT TIME
     const unsigned long now = millis();
 
-    // DHT11
+    // DHT11 ambient temperature/humidity and MLX90614 object temperature.
     if (
         now - lastDhtMs >= DHT_INTERVAL_MS ||
         lastDhtMs == 0
     )
     {
-        readDht();
+        readTemperatures();
     }
     
     // WIFI / MQTT
@@ -334,7 +349,7 @@ void initializeMax30102()
     if (
         !particleSensor.begin(
             Wire,
-            I2C_SPEED_FAST
+            I2C_SPEED_STANDARD
         )
     )
     {
@@ -549,10 +564,11 @@ void processIrSample(
         60000.0f /
         deltaMs;
 
-    // REJECT INVALID BPM
+    // Reject implausible estimates while still allowing very low
+    // readings to reach the low-heart-rate alert logic.
     if (
-        instantBpm < 40.0f ||
-        instantBpm > 180.0f
+        instantBpm < HR_VALID_MIN_BPM ||
+        instantBpm > HR_VALID_MAX_BPM
     )
     {
         return;
@@ -624,32 +640,49 @@ void sampleHeartRate()
     }
 }
 
-// READ DHT11
-void readDht()
+// READ DHT11 AMBIENT TEMPERATURE/HUMIDITY AND MLX90614 OBJECT TEMPERATURE
+void readTemperatures()
 {
     lastDhtMs = millis();
 
     const float h =
         dht.readHumidity();
 
-    const float t =
+    const float ambient =
         dht.readTemperature();
 
     if (
         isnan(h) ||
-        isnan(t)
+        isnan(ambient)
     )
     {
         dhtOk = false;
-
-        return;
+    }
+    else
+    {
+        dhtOk = true;
+        humidityPct = h;
+        ambientTemperatureC = ambient;
     }
 
-    dhtOk = true;
-
-    humidityPct = h;
-
-    temperatureC = t;
+    if (DEMO_BODY_TEMPERATURE)
+    {
+        if (!bodyDemoStarted)
+        {
+            bodyDemoStarted = true;
+            bodyDemoStartMs = millis();
+        }
+        const unsigned long elapsed = millis() - bodyDemoStartMs;
+        bodyTemperatureC = elapsed < 10000UL ? 36.1f : elapsed < 20000UL ? 36.4f : 36.5f;
+        bodyTemperatureAvailable = true;
+    }
+    else
+    {
+        const float objectTemperature = mlx.readObjectTempC();
+        mlxOk = !isnan(objectTemperature);
+        bodyTemperatureAvailable = mlxOk;
+        bodyTemperatureC = mlxOk ? objectTemperature : NAN;
+    }
 }
 
 // SOS BUTTON
@@ -727,20 +760,21 @@ void evaluateAlerts()
     {
         hrAlert =
             (
-                displayBpm <
+                averageBpm <
                 HR_ALERT_LOW_BPM
             ) ||
             (
-                displayBpm >
+                averageBpm >
                 HR_ALERT_HIGH_BPM
             );
     }
 
     tempAlert =
-        dhtOk &&
-        !isnan(temperatureC) &&
+        !DEMO_BODY_TEMPERATURE &&
+        mlxOk &&
+        !isnan(bodyTemperatureC) &&
         (
-            temperatureC >=
+            bodyTemperatureC >=
             TEMP_ALERT_HIGH_C
         );
 
@@ -1030,55 +1064,49 @@ void publishHealthData()
             );
     }
 
-    float temperatureToSend = 0.0f;
-
-    float humidityToSend = 0.0f;
-
-    if (dhtOk)
-    {
-        temperatureToSend =
-            temperatureC;
-
-        humidityToSend =
-            humidityPct;
-    }
-
-    snprintf(
+    int used = snprintf(
         payload,
         sizeof(payload),
-
-        "{"
-        "\"heartRate\":%d,"
-        "\"temperature\":%.1f,"
-        "\"humidity\":%.1f,"
-        "\"sos\":%s,"
-        "\"heartRateAlert\":%s,"
-        "\"temperatureAlert\":%s,"
-        "\"fingerPresent\":%s"
-        "}",
-
+        "{\"heartRate\":%d,\"sos\":%s,\"heartRateAlert\":%s,\"temperatureAlert\":%s,\"fingerPresent\":%s",
         heartRateToSend,
-
-        temperatureToSend,
-
-        humidityToSend,
-
-        sosLatched
-            ? "true"
-            : "false",
-
-        hrAlert
-            ? "true"
-            : "false",
-
-        tempAlert
-            ? "true"
-            : "false",
-
-        fingerPresent
-            ? "true"
-            : "false"
+        sosLatched ? "true" : "false",
+        hrAlert ? "true" : "false",
+        tempAlert ? "true" : "false",
+        fingerPresent ? "true" : "false"
     );
+
+    if (bodyTemperatureAvailable && !isnan(bodyTemperatureC) && used > 0 && used < sizeof(payload))
+    {
+        used += snprintf(
+            payload + used,
+            sizeof(payload) - used,
+            ",\"temperature\":%.1f",
+            bodyTemperatureC
+        );
+    }
+
+    if (used > 0 && used < sizeof(payload))
+    {
+        used += snprintf(payload + used, sizeof(payload) - used,
+                         ",\"bodyTemperatureDemo\":%s",
+                         DEMO_BODY_TEMPERATURE ? "true" : "false");
+    }
+
+    if (dhtOk && used > 0 && used < sizeof(payload))
+    {
+        used += snprintf(
+            payload + used,
+            sizeof(payload) - used,
+            ",\"ambientTemperature\":%.1f,\"humidity\":%.1f",
+            ambientTemperatureC,
+            humidityPct
+        );
+    }
+
+    if (used > 0 && used < sizeof(payload))
+    {
+        snprintf(payload + used, sizeof(payload) - used, "}");
+    }
 
     bool success =
         mqttClient.publish(
@@ -1210,28 +1238,32 @@ void updateOled()
         );
     }
 
-    // TEMPERATURE + HUMIDITY
+    // Body temperature from MLX90614 and ambient temperature from DHT11.
     display.setFont(
         u8g2_font_6x10_tf
     );
 
-    if (dhtOk)
+    if (bodyTemperatureAvailable && dhtOk)
     {
         snprintf(
             line,
             sizeof(line),
-            "T %.1fC H %.0f%%",
-            temperatureC,
-            humidityPct
+            DEMO_BODY_TEMPERATURE ? "D%.1fC A%.1fC" : "B%.1fC A%.1fC",
+            bodyTemperatureC,
+            ambientTemperatureC
         );
+    }
+    else if (bodyTemperatureAvailable)
+    {
+        snprintf(line, sizeof(line), DEMO_BODY_TEMPERATURE ? "DEMO %.1fC Ambient --" : "Body %.1fC Ambient --", bodyTemperatureC);
+    }
+    else if (dhtOk)
+    {
+        snprintf(line, sizeof(line), "Body -- Ambient %.1fC", ambientTemperatureC);
     }
     else
     {
-        snprintf(
-            line,
-            sizeof(line),
-            "T --C H --%%"
-        );
+        snprintf(line, sizeof(line), "Body -- Ambient --");
     }
 
     display.drawStr(
@@ -1345,28 +1377,19 @@ void printStatus()
         validBpmCount
     );
 
-    Serial.print(" T=");
-
-    if (dhtOk)
-    {
-        Serial.print(
-            temperatureC,
-            1
-        );
-
-        Serial.print("C H=");
-
-        Serial.print(
-            humidityPct,
-            0
-        );
-
-        Serial.print("%");
-    }
-    else
-    {
-        Serial.print("--");
-    }
+    Serial.print(" Body=");
+    if (bodyTemperatureAvailable) Serial.print(bodyTemperatureC, 1);
+    else Serial.print("--");
+    Serial.print("C Ambient=");
+    if (dhtOk) Serial.print(ambientTemperatureC, 1);
+    else Serial.print("--");
+    Serial.print("C Humidity=");
+    if (dhtOk) Serial.print(humidityPct, 0);
+    else Serial.print("--");
+    Serial.print("% MLX=");
+    Serial.print(DEMO_BODY_TEMPERATURE ? "DEMO" : (mlxOk ? "OK" : "OFF"));
+    Serial.print(" DHT=");
+    Serial.print(dhtOk ? "OK" : "OFF");
 
     Serial.print(
         fingerPresent
@@ -1405,10 +1428,13 @@ void printStatus()
         : "OFF"
     );
 
-    Serial.print(
-        " ALERT="
-    );
+    Serial.print("HR_ALERT=");
+    Serial.print(hrAlert ? "ON" : "OFF");
 
+    Serial.print(" TEMP_ALERT=");
+    Serial.print(tempAlert ? "ON" : "OFF");
+
+    Serial.print(" ALERT=");
     Serial.println(
         alertActive
         ? "ON"

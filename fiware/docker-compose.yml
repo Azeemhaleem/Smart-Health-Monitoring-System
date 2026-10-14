@@ -38,7 +38,9 @@ services:
     container_name: smart-watch-mosquitto
     restart: unless-stopped
     ports:
-      - "1883:1883"
+      # Host Mosquitto already owns 127.0.0.1:1883. Bind the FIWARE
+      # broker to the LAN address the ESP32 uses.
+      - "192.168.8.187:1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto-data:/mosquitto/data
