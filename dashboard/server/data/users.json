@@ -1,0 +1,14 @@
+[
+  {
+    "email": "azeem@example.com",
+    "name": "Azeem",
+    "passwordHash": "a3bfbe79bb64a561b3369d82d94c9253:b00a0d390e9bc863e06d3b837caa8743a7038d6ac70c9d1278536dec6cfb4047e3f99bc9b93f51dd55b6dbbbf846075e3216133c30a63288c5657ee223057ae1",
+    "createdAt": "2026-09-29T05:05:17.332Z"
+  },
+  {
+    "email": "azeemhaleem451@gmail.com",
+    "name": "Azeem",
+    "passwordHash": "9f798fdc173a636753eb25e9a66c720e:de80416e2094110ee71a7b1e1c9a723c2933cab2a31249aa8cae94899ed4dfaa4bec03e71b0cf6e83bbe08e3e963b95aee409673c5534d8e1e1fe0a76ede1d3e",
+    "createdAt": "2026-09-29T05:22:01.429Z"
+  }
+]
